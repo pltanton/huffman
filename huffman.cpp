@@ -8,22 +8,25 @@
 #include <stdio.h>
 
 using namespace std;
-        
-const map<unsigned char, int> create_char_map(const char* inputfile)
+
+size_t lenght = 0;
+char *filebuff;
+const map<unsigned char, int> create_char_map(ifstream &is)
 {
-    ifstream is (inputfile, ifstream::binary);
     map<unsigned char, int> char_map;
     
-    char tmp;
-    //cout << "Reading ";
-    while(is.get(tmp))
+    is.seekg(0, is.end);
+    lenght = is.tellg();
+    is.seekg(0, is.beg);
+    
+    filebuff = new char [lenght];
+    is.read(filebuff, sizeof(unsigned char)*lenght);
+
+    for(size_t i=0; i<lenght; i++)
     {
-        unsigned char c;
-        c=static_cast<unsigned char>(tmp);
-        //printf("%x ", c);
-        char_map[c]++;
+        char_map[filebuff[i]]++;
     }
-    //cout << "done." << endl;
+
     return char_map;
 }
 
@@ -119,10 +122,9 @@ void create_file(const char *outputfile, const char *inputfile, const Node* root
     dfs (root, buff, cnt, outfile);    
     //Кодирование по табличке
     unsigned char cur_sym;
-    char tmp;
-    while (infile.get(tmp))
+    for (size_t i = 0; i < lenght; ++i)
     {
-        cur_sym = static_cast<unsigned char>(tmp);
+        cur_sym = static_cast<unsigned char>(filebuff[i]);
         //infile.read((char* )&cur_sym, sizeof(unsigned char));
         vector<bool> code = table[cur_sym];
         //printf("%x ",cur_sym); 
@@ -144,9 +146,10 @@ void create_file(const char *outputfile, const char *inputfile, const Node* root
 }
 
 /* ==============Декодер============= */
-Node* read_tree(unsigned char &buff, int &cnt, ifstream &infile)
+Node* read_tree(int &cnt, size_t &pos_in_file)
 {
-    if(cnt == 8) { cnt=0; infile.read((char*)&buff, sizeof(unsigned char)); }
+    unsigned char buff = static_cast<unsigned char>(filebuff[pos_in_file]);
+    if(cnt == 8) { cnt=0; buff = static_cast<unsigned char>(filebuff[++pos_in_file]); }
     
     Node* cur = new Node();
     bool cur_bit = ((buff >> cnt) & 0x01) && 0x01;
@@ -159,7 +162,7 @@ Node* read_tree(unsigned char &buff, int &cnt, ifstream &infile)
         
         unsigned char c=0;
         c |= buff >> cnt;
-        infile.read((char* )&buff, sizeof(unsigned char));
+        buff = static_cast<unsigned char>(filebuff[++pos_in_file]);
         c |= buff << (8-cnt);
         cur->value_=c&0xff;
         
@@ -167,8 +170,8 @@ Node* read_tree(unsigned char &buff, int &cnt, ifstream &infile)
     } else {
         //cout << " next" << endl;
         cnt++;
-        cur->left_ = read_tree(buff, cnt, infile);  
-        cur->right_ = read_tree(buff, cnt, infile);
+        cur->left_ = read_tree(cnt, pos_in_file);  
+        cur->right_ = read_tree(cnt, pos_in_file);
     }
     
     return cur;
@@ -176,26 +179,38 @@ Node* read_tree(unsigned char &buff, int &cnt, ifstream &infile)
 
 void decrypt(const char *inputfile, const char *outputfile)
 {
-    ifstream infile(inputfile, ifstream::binary );
+    ifstream infile(inputfile, ifstream::binary ); 
     ofstream outfile(outputfile, ofstream::binary ); 
+    
+    if (infile.peek() == std::ifstream::traits_type::eof())
+    { // If empty
+        infile.close();
+        outfile.close();
+        return;
+    }
+    
+    infile.seekg(0, infile.end);
+    lenght = infile.tellg();
+    infile.seekg(0, infile.beg);
 
-    unsigned char buff=0; int cnt=0;
+    filebuff = new char[lenght];
+    infile.read(filebuff, sizeof(unsigned char)*lenght);
+    unsigned char buff=0; int cnt=0; size_t pos_in_file = 0;
 
-    infile.read((char* )&buff, sizeof(unsigned char));
-    //int magic = buff;
-    infile.read((char* )&buff, sizeof(unsigned char));
 
-    Node *root = read_tree(buff, cnt, infile);
+    buff = static_cast<unsigned char>(filebuff[pos_in_file++]);
+    int magic = buff;
+
+    Node *root = read_tree(cnt, pos_in_file);
     Node *node = root;  
 
     //cout<<endl<<cnt<<endl;
-    while(!infile.eof())
+    while(pos_in_file < lenght-1 || (pos_in_file == lenght - 1 && cnt < magic))
     {
         if (++cnt == 8)
         {
             cnt = 0;
-            //buff = buff2;
-            infile.read((char*)&buff, sizeof(unsigned char));    
+            buff = static_cast<unsigned char>(filebuff[++pos_in_file]);    
             //printf("%x ",buff);
         }
         bool bit = ((buff >> cnt) & 0x01) && 0x01;
@@ -217,9 +232,19 @@ void decrypt(const char *inputfile, const char *outputfile)
 
     outfile.close();
     infile.close();
+    delete [] filebuff;
 }
 
 void encrypt(const char* inputfile, const char* outputfile)
 {
-    create_file(outputfile, inputfile, create_tree(create_char_map(inputfile)));    
+    ifstream is(inputfile, ifstream::binary);
+    if (is.peek() == std::ifstream::traits_type::eof())
+    {// If empty, uglu but work
+        ofstream outfile(outputfile, ofstream::binary ); 
+        outfile.close();
+        is.close();
+        return;
+    }
+    create_file(outputfile, inputfile, create_tree(create_char_map(is)));    
+    delete [] filebuff;
 }
