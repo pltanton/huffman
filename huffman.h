@@ -12,6 +12,10 @@ public:
     unsigned char value() const {return value_;}
     Node* left() const {return left_;}
     Node* right() const {return right_;}
+    ~Node() {
+        if(left_!=0) delete left_;
+        if(right_!=0) delete right_;
+    }
 private:
     int sum_;
 public:

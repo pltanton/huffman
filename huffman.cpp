@@ -14,7 +14,6 @@ char *filebuff;
 const map<unsigned char, int> create_char_map(ifstream &is)
 {
     map<unsigned char, int> char_map;
-    
     is.seekg(0, is.end);
     lenght = is.tellg();
     is.seekg(0, is.beg);
@@ -26,6 +25,7 @@ const map<unsigned char, int> create_char_map(ifstream &is)
     {
         char_map[filebuff[i]]++;
     }
+
 
     return char_map;
 }
@@ -46,12 +46,14 @@ void build_table(const Node* cur)
         code.push_back(1);
         build_table(cur->right());
     } else {
+        if (code.empty()) code.push_back(0);
         table[cur->value()]=code;
+        
         //printf("%x :", cur->value());
         //for(size_t i=0; i<code.size(); ++i) cout<<code[i];
         //cout<<endl;
     }
-
+    
     code.pop_back();
 }
 
@@ -98,6 +100,7 @@ void dfs(const Node* node, unsigned char &buff, int &cnt, ofstream &outfile)
         const unsigned char c = node->value();
         //printf("1 node, char: %x \n", c);    
         buff |= 0x01 << cnt++;
+        //printf("\t %x \n", buff);
         buff |= c << cnt;
         //printf("\t %x \n", buff);
         outfile.write((char*)&buff, sizeof(unsigned char));
@@ -120,17 +123,19 @@ void create_file(const char *outputfile, const char *inputfile, const Node* root
     outfile.write((char*)&buff, sizeof(unsigned char)); //Зарезервированное место под число свобоных(или занятых, как там дальше получится) бит в последнем байте
     
     dfs (root, buff, cnt, outfile);    
+    delete root;
     //Кодирование по табличке
     unsigned char cur_sym;
     for (size_t i = 0; i < lenght; ++i)
     {
         cur_sym = static_cast<unsigned char>(filebuff[i]);
-        //infile.read((char* )&cur_sym, sizeof(unsigned char));
+        infile.read((char* )&cur_sym, sizeof(unsigned char));
         vector<bool> code = table[cur_sym];
         //printf("%x ",cur_sym); 
         for (size_t i = 0; i<code.size(); ++i)
         {
             if (++cnt == 8) { outfile.write((char*)&buff, sizeof(unsigned char)); cnt=0; buff=0; }
+            //cout << code[i];
             buff |= code[i] << cnt;
         }
     }
@@ -164,7 +169,7 @@ Node* read_tree(int &cnt, size_t &pos_in_file)
         c |= buff >> cnt;
         buff = static_cast<unsigned char>(filebuff[++pos_in_file]);
         c |= buff << (8-cnt);
-        cur->value_=c&0xff;
+        cur->value_=c;
         
         //printf("\tWow, a character: %c (%x) \n", c, c & 0xff);
     } else {
@@ -202,36 +207,38 @@ void decrypt(const char *inputfile, const char *outputfile)
     int magic = buff;
 
     Node *root = read_tree(cnt, pos_in_file);
-    Node *node = root;  
+    Node *node = root; 
 
-    //cout<<endl<<cnt<<endl;
+    buff = static_cast<unsigned char>(filebuff[pos_in_file]);
     while(pos_in_file < lenght-1 || (pos_in_file == lenght - 1 && cnt < magic))
     {
         if (++cnt == 8)
         {
             cnt = 0;
             buff = static_cast<unsigned char>(filebuff[++pos_in_file]);    
-            //printf("%x ",buff);
         }
-        bool bit = ((buff >> cnt) & 0x01) && 0x01;
-        
+        bool bit = (buff >> cnt) & 0x01;
+         
         if (bit) {
-            node = node->right_;
+            if (node->right() != NULL) node = node->right_;
         } else {
-            node = node->left_;
-        }
+            if (node->left() != NULL) node = node->left_;
+        } 
         if (node->right_ == NULL && node->left_ == NULL)
-        { 
-            //printf("%x %s %d %x\n", buff, infile.eof()?"true":"false", cnt, node->value());
+        {
+            //cout<<"Here";
             unsigned char value = node->value();
-            outfile.write((char*)&value, sizeof(unsigned char));
+            //printf("%x %x %x %x \n", buff>>cnt, static_cast<unsigned char>(filebuff[pos_in_file]), buff, value);
+            outfile.write((char*)&value, sizeof(char));
             node = root;
         }
         
     } ; 
 
+
     outfile.close();
     infile.close();
+    delete root;
     delete [] filebuff;
 }
 
@@ -239,7 +246,7 @@ void encrypt(const char* inputfile, const char* outputfile)
 {
     ifstream is(inputfile, ifstream::binary);
     if (is.peek() == std::ifstream::traits_type::eof())
-    {// If empty, uglu but work
+    {// If empty, ugly but work
         ofstream outfile(outputfile, ofstream::binary ); 
         outfile.close();
         is.close();
